@@ -261,8 +261,8 @@
         }
         // clamp Y to battlefield (leave room for territory bar at top)
         this.y = Math.max(50, Math.min(H - 15, this.y));
-        // clamp X inside bases
-        this.x = Math.max(BASE_W + 2, Math.min(W - BASE_W - 2, this.x));
+        // clamp X to canvas edges (units can enter bases)
+        this.x = Math.max(5, Math.min(W - 5, this.x));
       }
     }
   }
@@ -435,9 +435,9 @@
       // nothing — drift toward centre very slowly
       target = W / 2;
     } else if (blues.length === 0) {
-      target = Math.max(BASE_W + 10, G.frontline - 80 * (dt / 1000));
+      target = G.frontline - 100 * (dt / 1000);
     } else if (reds.length === 0) {
-      target = Math.min(W - BASE_W - 10, G.frontline + 80 * (dt / 1000));
+      target = G.frontline + 100 * (dt / 1000);
     } else {
       // Weighted pressure: each unit contributes based on advancement into enemy half
       let bP = 0, rP = 0;
@@ -449,7 +449,7 @@
 
     // Smooth
     G.frontline += (target - G.frontline) * 0.06;
-    G.frontline  = Math.max(BASE_W + 5, Math.min(W - BASE_W - 5, G.frontline));
+    G.frontline  = Math.max(5, Math.min(W - 5, G.frontline));
     G.territory  = G.frontline / W;
   }
 
@@ -460,14 +460,27 @@
     G.resources.red  = Math.min(999, G.resources.red  + (baseRate + (1 - G.territory) * 4) * (dt / 1000));
   }
 
-  // ─── Victory check ───────────────────────────────────────────────────────────
-  function checkVictory() {
+  // ─── Base damage + victory check ─────────────────────────────────────────────
+  function checkVictory(dt) {
     if (G.gameover) return;
-    if (G.frontline >= W - BASE_W - 4) {
-      G.gameover = true; G.winner = 'blue';
-    } else if (G.frontline <= BASE_W + 4) {
-      G.gameover = true; G.winner = 'red';
+
+    // Units inside enemy base deal damage to it
+    const dmgPerUnit = 20; // HP per second per unit inside base
+    const redInBlueBase = G.units.filter(u => !u.dead && u.team === 'red'  && u.x < BASE_W + 15);
+    const blueInRedBase = G.units.filter(u => !u.dead && u.team === 'blue' && u.x > W - BASE_W - 15);
+
+    if (redInBlueBase.length > 0) {
+      G.baseHp.blue -= redInBlueBase.length * dmgPerUnit * (dt / 1000);
+      if (G.baseHp.blue <= 0) { G.gameover = true; G.winner = 'red'; return; }
     }
+    if (blueInRedBase.length > 0) {
+      G.baseHp.red -= blueInRedBase.length * dmgPerUnit * (dt / 1000);
+      if (G.baseHp.red <= 0) { G.gameover = true; G.winner = 'blue'; return; }
+    }
+
+    // Frontline fallback (territorial domination)
+    if (G.frontline >= W - BASE_W) { G.gameover = true; G.winner = 'blue'; }
+    if (G.frontline <= BASE_W)     { G.gameover = true; G.winner = 'red';  }
   }
 
   // ─── Visual helpers ──────────────────────────────────────────────────────────
@@ -822,7 +835,7 @@
       G.airdropCooldown   = Math.max(0, G.airdropCooldown   - dt);
 
       updateFrontline(dt);
-      checkVictory();
+      checkVictory(dt);
     }
 
     render();
