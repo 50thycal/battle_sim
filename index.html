@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Territory War</title>
+  <title>Territory War – Strategic Placement</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -16,18 +16,18 @@
       min-height: 100vh;
       padding: 12px;
       gap: 8px;
+      user-select: none;
     }
-    h1 {
-      font-size: 18px;
-      letter-spacing: 4px;
-      color: #aaa;
-      text-transform: uppercase;
-    }
-    #canvas {
+    h1 { font-size: 18px; letter-spacing: 4px; color: #aaa; text-transform: uppercase; }
+    #viewport {
+      width: 900px;
+      height: 460px;
+      overflow: hidden;
       border: 1px solid #333;
-      display: block;
+      position: relative;
       cursor: default;
     }
+    #canvas { display: block; }
     #ui {
       display: flex;
       gap: 8px;
@@ -40,19 +40,11 @@
       padding: 10px 14px;
       flex: 1;
     }
-    .panel h3 {
-      font-size: 12px;
-      letter-spacing: 2px;
-      margin-bottom: 8px;
-      text-transform: uppercase;
-    }
+    .panel h3 { font-size: 12px; letter-spacing: 2px; margin-bottom: 8px; text-transform: uppercase; }
     .panel.blue h3 { color: #5599ff; }
     .panel.red h3  { color: #ff5555; }
-    .panel.mid    { flex: 0 0 200px; text-align: center; }
-    .res-row {
-      font-size: 13px;
-      margin-bottom: 8px;
-    }
+    .panel.mid { flex: 0 0 220px; text-align: center; }
+    .res-row { font-size: 13px; margin-bottom: 4px; }
     .res-val { font-size: 20px; font-weight: bold; }
     .res-val.blue { color: #5599ff; }
     .res-val.red  { color: #ff5555; }
@@ -67,16 +59,25 @@
       background: #1e1e3a;
       color: #ddd;
       transition: background 0.15s;
+      position: relative;
     }
     button:hover:not(:disabled) { background: #2a2a50; }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.selected { background: #33337a; border-color: #77aaff; box-shadow: 0 0 8px rgba(100,150,255,0.4); }
     button.spawn-infantry { border-color: #5599ff88; }
     button.spawn-tank     { border-color: #55aaff88; }
-    button.spawn-ranged   { border-color: #88bbff88; }
+    button.spawn-antitank { border-color: #ff995588; }
+    button.spawn-support  { border-color: #44ff8888; }
     button.ability        { border-color: #ffaa3388; }
-    button.upgrade        { border-color: #44ff8888; }
-    .mid-stat { font-size: 12px; color: #aaa; margin: 4px 0; }
+    .cd-bar {
+      position: absolute; bottom: 0; left: 0; height: 3px;
+      background: #ffaa33; border-radius: 0 0 4px 4px;
+      transition: width 0.1s linear;
+    }
+    .mid-stat { font-size: 12px; color: #aaa; margin: 3px 0; }
     .mid-stat span { color: #fff; font-weight: bold; }
+    .supply-bar { width: 100%; height: 8px; background: #111; border-radius: 4px; margin-top: 4px; overflow: hidden; }
+    .supply-fill { height: 100%; background: #5599ff; border-radius: 4px; transition: width 0.3s; }
     #log {
       width: 900px;
       background: #0a0a18;
@@ -88,26 +89,33 @@
       height: 36px;
       overflow: hidden;
     }
+    .lane-label {
+      position: absolute; left: 4px; color: rgba(255,255,255,0.15);
+      font-size: 10px; font-family: monospace; pointer-events: none; z-index: 2;
+    }
   </style>
 </head>
 <body>
-  <h1>Territory War</h1>
-  <canvas id="canvas" width="900" height="420"></canvas>
+  <h1>Territory War – Strategic Placement</h1>
+  <div id="viewport">
+    <canvas id="canvas"></canvas>
+  </div>
 
   <div id="ui">
     <!-- Blue panel -->
     <div class="panel blue">
       <h3>Blue Command</h3>
-      <div class="res-row">Resources: <span class="res-val blue" id="blue-res">50</span></div>
-      <div class="btn-row">
-        <button class="spawn-infantry" onclick="playerSpawn('infantry')" id="btn-infantry">Infantry (20)</button>
-        <button class="spawn-tank"     onclick="playerSpawn('tank')"     id="btn-tank">Tank (60)</button>
-        <button class="spawn-ranged"   onclick="playerSpawn('ranged')"   id="btn-ranged">Ranged (40)</button>
+      <div class="res-row">Resources: <span class="res-val blue" id="blue-res">80</span></div>
+      <div class="res-row" style="font-size:11px;color:#888;">Supply: <span id="supply-cur">0</span>/<span id="supply-max">10</span></div>
+      <div class="supply-bar"><div class="supply-fill" id="supply-fill" style="width:0%"></div></div>
+      <div class="btn-row" style="margin-top:6px">
+        <button class="spawn-infantry" id="btn-infantry" data-type="infantry">Infantry (25)<div class="cd-bar" id="cd-infantry"></div></button>
+        <button class="spawn-tank" id="btn-tank" data-type="tank">Tank (70)<div class="cd-bar" id="cd-tank"></div></button>
+        <button class="spawn-antitank" id="btn-antitank" data-type="antitank">Anti-Tank (50)<div class="cd-bar" id="cd-antitank"></div></button>
+        <button class="spawn-support" id="btn-support" data-type="support">Support (40)<div class="cd-bar" id="cd-support"></div></button>
       </div>
       <div class="btn-row" style="margin-top:6px">
-        <button class="ability" onclick="triggerArtillery()" id="btn-arty">Artillery (40) &#x1F4A5;</button>
-        <button class="ability" onclick="triggerAirdrop()"   id="btn-drop">Airdrop (50) &#x2708;</button>
-        <button class="upgrade" onclick="upgradeSpawn()"     id="btn-upgrade">Faster Spawn (80) &#x2191;</button>
+        <button class="ability" onclick="triggerArtillery()" id="btn-arty">Artillery (50)<div class="cd-bar" id="cd-arty"></div></button>
       </div>
     </div>
 
@@ -115,735 +123,1162 @@
     <div class="panel mid">
       <div class="mid-stat">Units alive</div>
       <div class="mid-stat">Blue <span id="stat-blue-units">0</span> &nbsp; Red <span id="stat-red-units">0</span></div>
-      <div style="margin: 8px 0; height: 1px; background: #2a2a4a;"></div>
+      <div style="margin:6px 0;height:1px;background:#2a2a4a;"></div>
       <div class="mid-stat">Kills</div>
       <div class="mid-stat">Blue <span id="stat-blue-kills">0</span> &nbsp; Red <span id="stat-red-kills">0</span></div>
-      <div style="margin: 8px 0; height: 1px; background: #2a2a4a;"></div>
-      <div class="mid-stat">Wave</div>
-      <div class="mid-stat"><span id="stat-wave">1</span></div>
+      <div style="margin:6px 0;height:1px;background:#2a2a4a;"></div>
+      <div class="mid-stat">Lane Pressure</div>
+      <div class="mid-stat" style="font-size:11px;">Top: <span id="lane-top-pct">50</span>% &nbsp; Bot: <span id="lane-bot-pct">50</span>%</div>
+      <div style="margin:6px 0;height:1px;background:#2a2a4a;"></div>
+      <div class="mid-stat">Time: <span id="match-time">0:00</span></div>
     </div>
 
     <!-- Red panel -->
     <div class="panel red">
       <h3>Red Command (AI)</h3>
-      <div class="res-row">Resources: <span class="res-val red" id="red-res">50</span></div>
-      <div style="font-size: 11px; color: #888; margin-top: 4px;" id="ai-status">AI managing forces...</div>
-      <div style="font-size: 11px; color: #666; margin-top: 8px;">
-        Spawn interval: <span id="red-spawn-rate">3.0</span>s<br>
-        Spawn level: <span id="red-spawn-lvl">1</span>
+      <div class="res-row">Resources: <span class="res-val red" id="red-res">80</span></div>
+      <div style="font-size:11px;color:#888;margin-top:4px;" id="ai-status">AI managing forces...</div>
+      <div style="font-size:11px;color:#666;margin-top:8px;">
+        Supply: <span id="red-supply">0</span>/<span id="red-supply-max">10</span>
       </div>
     </div>
   </div>
 
-  <div id="log">Ready. Auto-spawn active. Use resources to spawn premium units and trigger abilities.</div>
+  <div id="log">Strategic Placement mode. Select a unit type, then click in your deployment zone to place.</div>
 
-  <script>
-  // ─── Canvas & constants ─────────────────────────────────────────────────────
-  const canvas = document.getElementById('canvas');
-  const ctx    = canvas.getContext('2d');
-  const W = canvas.width;   // 900
-  const H = canvas.height;  // 420
+<script>
+// ============================================================================
+//  CANVAS & WORLD CONSTANTS
+// ============================================================================
+const viewport = document.getElementById('viewport');
+const canvas   = document.getElementById('canvas');
+const ctx      = canvas.getContext('2d');
 
-  const BASE_W   = 55;
-  const BASE_H   = 90;
-  const BASE_BLUE_X = 0;
-  const BASE_RED_X  = W - BASE_W;
+const VIEW_W = 900;
+const VIEW_H = 460;
+const WORLD_W = 1800;  // double width — scrollable
+const WORLD_H = 460;
 
-  // ─── Unit definitions ───────────────────────────────────────────────────────
-  const UNIT_DEF = {
-    infantry: { hp: 60,  dmg: 12, spd: 55,  range: 55,  atkSpd: 900,  size: 5,  cost: 20, color: null },
-    tank:     { hp: 250, dmg: 30, spd: 28,  range: 65,  atkSpd: 1800, size: 10, cost: 60, color: null },
-    ranged:   { hp: 40,  dmg: 18, spd: 48,  range: 130, atkSpd: 1200, size: 5,  cost: 40, color: null },
-  };
+canvas.width  = WORLD_W;
+canvas.height = WORLD_H;
 
-  // ─── Game state ─────────────────────────────────────────────────────────────
-  const G = {
-    units:       [],
-    projectiles: [],
-    explosions:  [],
-    particles:   [],
-    resources:   { blue: 50, red: 50 },
-    kills:       { blue: 0, red: 0 },
-    frontline:   W / 2,          // x position; 0=all red, W=all blue
-    territory:   0.5,            // 0..1
-    spawnTimer:  { blue: 0, red: 0 },
-    spawnInterval: { blue: 3000, red: 3200 },
-    spawnLevel:  { blue: 1, red: 1 },
-    artilleryCooldown: 0,
-    airdropCooldown:   0,
-    artilleryMaxCD:   12000,
-    airdropMaxCD:      8000,
-    artilleryPending: false,
-    wave: 1,
-    waveTimer: 0,
-    gameover: false,
-    winner: null,
-    lastTime: 0,
-    frameCount: 0,
-    upgradeCount: 0,
-    aiUpgradeTimer: 0,
-    baseHp: { blue: 500, red: 500 },
-    baseMaxHp: { blue: 500, red: 500 },
-  };
+const BASE_W = 60;
+const BASE_H = 100;
+const LANE_DIV_Y = WORLD_H / 2;       // divider between top and bottom lane
+const LANE_TOP_CENTER = WORLD_H * 0.25;
+const LANE_BOT_CENTER = WORLD_H * 0.75;
+const LANE_HALF_H = WORLD_H * 0.22;   // half-height of each lane's active area
+const TERRITORY_BAR_H = 24;
 
-  // ─── Unique IDs ─────────────────────────────────────────────────────────────
-  let _uid = 0;
-  const uid = () => ++_uid;
+// ============================================================================
+//  UNIT DEFINITIONS — Rock-Paper-Scissors
+// ============================================================================
+// Counter multipliers: strong=1.5x dmg, weak=0.6x dmg, neutral=1.0x
+const COUNTER = {
+  infantry: { antitank: 1.5, tank: 0.6, infantry: 1.0, support: 1.5 },
+  tank:     { infantry: 1.5, tank: 1.0,  antitank: 0.6, support: 1.0 },
+  antitank: { tank: 1.5,     antitank: 1.0, infantry: 0.6, support: 1.0 },
+  support:  { infantry: 0.6, tank: 0.6,  antitank: 0.6, support: 1.0 },
+};
 
-  // ─── Unit class ─────────────────────────────────────────────────────────────
-  class Unit {
-    constructor(team, type, x, y) {
-      const d      = UNIT_DEF[type];
-      this.id      = uid();
-      this.team    = team;
-      this.type    = type;
-      this.x       = x;
-      this.y       = y;
-      this.hp      = d.hp;
-      this.maxHp   = d.hp;
-      this.dmg     = d.dmg;
-      this.spd     = d.spd;
-      this.range   = d.range;
-      this.atkSpd  = d.atkSpd;
-      this.size    = d.size;
-      this.atkCd   = Math.random() * d.atkSpd; // stagger initial attacks
-      this.target  = null;
-      this.dead    = false;
-      // slight wander offset so they don't stack perfectly
-      this.wanderY  = (Math.random() - 0.5) * 2;
-      this.wanderT  = Math.random() * 1000;
-    }
+const UNIT_DEF = {
+  infantry: { hp: 100, dmg: 10, spd: 36, range: 55,  atkSpd: 1200, size: 5,  cost: 25, vision: 130, cooldown: 3000,  color: null },
+  tank:     { hp: 400, dmg: 22, spd: 18, range: 60,  atkSpd: 2200, size: 11, cost: 70, vision: 110, cooldown: 5000,  color: null },
+  antitank: { hp: 65,  dmg: 30, spd: 30, range: 150, atkSpd: 1800, size: 6,  cost: 50, vision: 160, cooldown: 4000,  color: null },
+  support:  { hp: 55,  dmg: 4,  spd: 32, range: 100, atkSpd: 2000, size: 5,  cost: 40, vision: 140, cooldown: 4500,  color: null,
+              healAmt: 8, healRate: 1500, healRange: 90 },
+};
 
-    update(dt, units) {
-      if (this.dead) return;
+const GLOBAL_DEPLOY_CD = 1000; // ms between any placements
 
-      this.atkCd   = Math.max(0, this.atkCd - dt);
-      this.wanderT += dt;
+// ============================================================================
+//  GAME STATE
+// ============================================================================
+const G = {
+  units: [],
+  projectiles: [],
+  explosions: [],
+  particles: [],
+  healBeams: [],
 
-      // ── Find nearest live enemy ──────────────────────────────────────────
-      let nearest = null;
-      let nearDist = Infinity;
-      for (const u of units) {
-        if (u.dead || u.team === this.team) continue;
-        const d = Math.hypot(u.x - this.x, u.y - this.y);
-        if (d < nearDist) { nearDist = d; nearest = u; }
-      }
-      this.target = nearest;
+  resources:  { blue: 80, red: 80 },
+  kills:      { blue: 0, red: 0 },
 
-      // ── Attack or advance ────────────────────────────────────────────────
-      if (nearest && nearDist <= this.range) {
-        // attack
-        if (this.atkCd <= 0) {
-          this.atkCd = this.atkSpd;
-          nearest.hp -= this.dmg;
-          spawnProjectile(this, nearest);
-          if (nearest.hp <= 0) {
-            nearest.dead = true;
-            G.kills[this.team]++;
-            const reward = UNIT_DEF[nearest.type].cost * 0.4;
-            G.resources[this.team] = Math.min(999, G.resources[this.team] + reward);
-            spawnParticles(nearest.x, nearest.y, nearest.team, 6);
+  // Territory: 0 = all red, 1 = all blue (per lane and overall)
+  territory:     0.5,
+  lanePressure:  { top: 0.5, bot: 0.5 },
+  frontline:     { top: WORLD_W / 2, bot: WORLD_W / 2 },
+
+  // Supply
+  supplyCap:     { blue: 10, red: 10 },
+  supplyUsed:    { blue: 0, red: 0 },
+  matchTime:     0,
+
+  // Cooldowns
+  unitCooldowns:  { infantry: 0, tank: 0, antitank: 0, support: 0 },
+  globalDeployCd: 0,
+  artilleryCooldown: 0,
+  artilleryMaxCD: 14000,
+  artilleryPending: false,
+
+  // AI state
+  aiDeployCd: 0,
+  aiUnitCds:  { infantry: 0, tank: 0, antitank: 0, support: 0 },
+  aiThinkTimer: 0,
+
+  // Placement
+  selectedType: null,
+  placementValid: false,
+  mouseWorld: { x: 0, y: 0 },
+
+  // Scroll
+  scrollX: (WORLD_W - VIEW_W) / 2,
+  scrollDrag: false,
+  scrollDragStart: 0,
+  scrollDragStartX: 0,
+
+  // Match
+  gameover: false,
+  winner: null,
+  lastTime: 0,
+  frameCount: 0,
+  baseHp:    { blue: 600, red: 600 },
+  baseMaxHp: { blue: 600, red: 600 },
+};
+
+// ============================================================================
+//  HELPERS
+// ============================================================================
+let _uid = 0;
+const uid = () => ++_uid;
+
+function getLane(y) {
+  return y < LANE_DIV_Y ? 'top' : 'bot';
+}
+
+function getLaneCenter(lane) {
+  return lane === 'top' ? LANE_TOP_CENTER : LANE_BOT_CENTER;
+}
+
+function getDeployZone(team) {
+  // Deployment zone: from base edge to a zone behind the frontline
+  const buffer = 120;
+  if (team === 'blue') {
+    const topMax = Math.max(BASE_W + 30, G.frontline.top - buffer);
+    const botMax = Math.max(BASE_W + 30, G.frontline.bot - buffer);
+    return {
+      top: { x1: BASE_W + 5, x2: topMax, y1: TERRITORY_BAR_H + 10, y2: LANE_DIV_Y - 10 },
+      bot: { x1: BASE_W + 5, x2: botMax, y1: LANE_DIV_Y + 10, y2: WORLD_H - 10 },
+    };
+  } else {
+    const topMin = Math.min(WORLD_W - BASE_W - 30, G.frontline.top + buffer);
+    const botMin = Math.min(WORLD_W - BASE_W - 30, G.frontline.bot + buffer);
+    return {
+      top: { x1: topMin, x2: WORLD_W - BASE_W - 5, y1: TERRITORY_BAR_H + 10, y2: LANE_DIV_Y - 10 },
+      bot: { x1: botMin, x2: WORLD_W - BASE_W - 5, y1: LANE_DIV_Y + 10, y2: WORLD_H - 10 },
+    };
+  }
+}
+
+function isInDeployZone(x, y, team) {
+  const zones = getDeployZone(team);
+  const z = y < LANE_DIV_Y ? zones.top : zones.bot;
+  return x >= z.x1 && x <= z.x2 && y >= z.y1 && y <= z.y2;
+}
+
+function liveUnits(team) {
+  return G.units.filter(u => !u.dead && (!team || u.team === team));
+}
+
+function countSupply(team) {
+  return liveUnits(team).length;
+}
+
+// ============================================================================
+//  UNIT CLASS
+// ============================================================================
+class Unit {
+  constructor(team, type, x, y) {
+    const d       = UNIT_DEF[type];
+    this.id       = uid();
+    this.team     = team;
+    this.type     = type;
+    this.x        = x;
+    this.y        = y;
+    this.lane     = getLane(y);
+    this.hp       = d.hp;
+    this.maxHp    = d.hp;
+    this.dmg      = d.dmg;
+    this.spd      = d.spd;
+    this.range    = d.range;
+    this.atkSpd   = d.atkSpd;
+    this.size     = d.size;
+    this.vision   = d.vision;
+    this.atkCd    = Math.random() * d.atkSpd * 0.5;
+    this.healCd   = 0;
+    this.target   = null;
+    this.dead     = false;
+    this.visible  = true;  // for fog of war from player perspective
+    this.wanderY  = (Math.random() - 0.5) * 2;
+    this.wanderT  = Math.random() * 1000;
+  }
+
+  update(dt, units) {
+    if (this.dead) return;
+    this.atkCd   = Math.max(0, this.atkCd - dt);
+    this.wanderT += dt;
+
+    // Support healing logic
+    if (this.type === 'support') {
+      this.healCd = Math.max(0, this.healCd - dt);
+      if (this.healCd <= 0) {
+        const def = UNIT_DEF.support;
+        let lowestAlly = null;
+        let lowestRatio = 1;
+        for (const u of units) {
+          if (u.dead || u.team !== this.team || u.id === this.id) continue;
+          if (u.lane !== this.lane) continue;
+          const d = Math.hypot(u.x - this.x, u.y - this.y);
+          if (d <= def.healRange) {
+            const ratio = u.hp / u.maxHp;
+            if (ratio < lowestRatio) { lowestRatio = ratio; lowestAlly = u; }
           }
         }
-      } else {
-        // move toward nearest enemy, or toward enemy base if no enemy visible
-        const dir = this.team === 'blue' ? 1 : -1;
-        if (nearest) {
-          const dx = nearest.x - this.x;
-          const dy = nearest.y - this.y;
-          const d  = Math.hypot(dx, dy) || 1;
-          this.x += (dx / d) * this.spd * (dt / 1000);
-          this.y += (dy / d) * this.spd * (dt / 1000);
-        } else {
-          this.x += dir * this.spd * (dt / 1000);
-          // gentle wander on Y
-          this.y += Math.sin(this.wanderT / 600) * this.wanderY * 15 * (dt / 1000);
+        if (lowestAlly && lowestRatio < 1) {
+          lowestAlly.hp = Math.min(lowestAlly.maxHp, lowestAlly.hp + def.healAmt);
+          this.healCd = def.healRate;
+          G.healBeams.push({
+            x1: this.x, y1: this.y,
+            x2: lowestAlly.x, y2: lowestAlly.y,
+            life: 300, maxLife: 300, team: this.team,
+          });
         }
-        // clamp Y to battlefield (leave room for territory bar at top)
-        this.y = Math.max(50, Math.min(H - 15, this.y));
-        // clamp X to canvas edges (units can enter bases)
-        this.x = Math.max(5, Math.min(W - 5, this.x));
       }
     }
-  }
 
-  // ─── Spawning helpers ────────────────────────────────────────────────────────
-  function spawnUnit(team, type, forced = false) {
-    const cost = UNIT_DEF[type].cost;
-    if (!forced && G.resources[team] < cost) return false;
-    if (!forced) G.resources[team] -= cost;
+    // Find nearest enemy within vision, same lane preferred
+    let nearest = null;
+    let nearDist = Infinity;
+    for (const u of units) {
+      if (u.dead || u.team === this.team) continue;
+      const d = Math.hypot(u.x - this.x, u.y - this.y);
+      if (d > this.vision) continue;
+      // Prefer same lane
+      const sameLane = u.lane === this.lane;
+      const effectiveD = sameLane ? d : d + 200;
+      if (effectiveD < nearDist) { nearDist = effectiveD; nearest = u; }
+    }
+    this.target = nearest;
+    const actualDist = nearest ? Math.hypot(nearest.x - this.x, nearest.y - this.y) : Infinity;
 
-    const spawnX = team === 'blue'
-      ? BASE_W + 5 + Math.random() * 20
-      : W - BASE_W - 5 - Math.random() * 20;
-    const spawnY = H / 2 + (Math.random() - 0.5) * (BASE_H - 20);
-    G.units.push(new Unit(team, type, spawnX, spawnY));
-    return true;
-  }
-
-  // auto-spawn (free, driven by timer)
-  function autoSpawn(team, dt) {
-    G.spawnTimer[team] += dt;
-    if (G.spawnTimer[team] >= G.spawnInterval[team]) {
-      G.spawnTimer[team] = 0;
-      spawnUnit(team, 'infantry', true);  // free auto-spawn
+    // Attack or advance
+    if (nearest && actualDist <= this.range) {
+      if (this.atkCd <= 0) {
+        this.atkCd = this.atkSpd;
+        const counterMul = COUNTER[this.type]?.[nearest.type] ?? 1.0;
+        const dmg = this.dmg * counterMul;
+        nearest.hp -= dmg;
+        spawnProjectile(this, nearest);
+        if (nearest.hp <= 0) {
+          nearest.dead = true;
+          G.kills[this.team]++;
+          const reward = UNIT_DEF[nearest.type].cost * 0.3;
+          G.resources[this.team] = Math.min(999, G.resources[this.team] + reward);
+          spawnParticles(nearest.x, nearest.y, nearest.team, 6);
+        }
+      }
+    } else {
+      const dir = this.team === 'blue' ? 1 : -1;
+      if (nearest) {
+        const dx = nearest.x - this.x;
+        const dy = nearest.y - this.y;
+        const d  = Math.hypot(dx, dy) || 1;
+        this.x += (dx / d) * this.spd * (dt / 1000);
+        this.y += (dy / d) * this.spd * (dt / 1000);
+      } else {
+        this.x += dir * this.spd * (dt / 1000);
+        const laneCenter = getLaneCenter(this.lane);
+        this.y += (laneCenter - this.y) * 0.01;
+        this.y += Math.sin(this.wanderT / 800) * this.wanderY * 10 * (dt / 1000);
+      }
+      // Clamp to lane bounds
+      if (this.lane === 'top') {
+        this.y = Math.max(TERRITORY_BAR_H + 10, Math.min(LANE_DIV_Y - 10, this.y));
+      } else {
+        this.y = Math.max(LANE_DIV_Y + 10, Math.min(WORLD_H - 10, this.y));
+      }
+      this.x = Math.max(5, Math.min(WORLD_W - 5, this.x));
     }
   }
+}
 
-  // ─── Player actions ──────────────────────────────────────────────────────────
-  function playerSpawn(type) {
-    if (G.gameover) return;
-    if (!spawnUnit('blue', type)) log('Not enough resources.');
+// ============================================================================
+//  VISUAL HELPERS
+// ============================================================================
+function spawnProjectile(from, to) {
+  G.projectiles.push({
+    x: from.x, y: from.y, tx: to.x, ty: to.y,
+    team: from.team, type: from.type,
+    life: 250, maxLife: 250,
+  });
+}
+
+function spawnParticles(x, y, team, n) {
+  for (let i = 0; i < n; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 20 + Math.random() * 60;
+    G.particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 300 + Math.random() * 300, maxLife: 600,
+      team, size: 2 + Math.random() * 2,
+    });
   }
+}
 
-  // Artillery
-  function triggerArtillery() {
-    if (G.gameover) return;
-    if (G.artilleryCooldown > 0) { log('Artillery on cooldown.'); return; }
-    if (G.resources.blue < 40)   { log('Not enough resources for artillery.'); return; }
-    G.artilleryPending = true;
-    canvas.style.cursor = 'crosshair';
-    log('Click on the battlefield to target artillery strike!');
+// ============================================================================
+//  SPAWNING
+// ============================================================================
+function spawnUnitAt(team, type, x, y) {
+  const cost = UNIT_DEF[type].cost;
+  if (G.resources[team] < cost) return false;
+  if (countSupply(team) >= G.supplyCap[team]) return false;
+  G.resources[team] -= cost;
+  G.units.push(new Unit(team, type, x, y));
+  return true;
+}
+
+// ============================================================================
+//  PLAYER ACTIONS
+// ============================================================================
+function selectUnitType(type) {
+  if (G.gameover) return;
+  if (G.selectedType === type) {
+    G.selectedType = null;
+    viewport.style.cursor = 'default';
+    updateButtonSelection();
+    return;
   }
+  G.selectedType = type;
+  viewport.style.cursor = 'crosshair';
+  updateButtonSelection();
+}
 
-  canvas.addEventListener('click', e => {
-    if (!G.artilleryPending || G.gameover) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) * (W / rect.width);
-    const my = (e.clientY - rect.top)  * (H / rect.height);
-    G.resources.blue     -= 40;
-    G.artilleryCooldown   = G.artilleryMaxCD;
-    G.artilleryPending    = false;
-    canvas.style.cursor   = 'default';
+function updateButtonSelection() {
+  ['infantry', 'tank', 'antitank', 'support'].forEach(t => {
+    const btn = document.getElementById('btn-' + t);
+    btn.classList.toggle('selected', G.selectedType === t);
+  });
+}
+
+// Wire up unit buttons
+['infantry', 'tank', 'antitank', 'support'].forEach(t => {
+  document.getElementById('btn-' + t).addEventListener('click', () => selectUnitType(t));
+});
+
+// Placement click
+viewport.addEventListener('click', e => {
+  if (G.gameover) return;
+
+  const rect = viewport.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (VIEW_W / rect.width) + G.scrollX;
+  const my = (e.clientY - rect.top) * (VIEW_H / rect.height);
+
+  // Artillery targeting
+  if (G.artilleryPending) {
+    G.resources.blue -= 50;
+    G.artilleryCooldown = G.artilleryMaxCD;
+    G.artilleryPending = false;
+    viewport.style.cursor = G.selectedType ? 'crosshair' : 'default';
     log('Artillery incoming!');
-    // Delayed strike
     setTimeout(() => doArtilleryStrike(mx, my, 'blue'), 900);
+    return;
+  }
+
+  // Unit placement
+  if (!G.selectedType) return;
+  const type = G.selectedType;
+  const def = UNIT_DEF[type];
+
+  if (G.globalDeployCd > 0) { log('Global deploy cooldown active.'); return; }
+  if (G.unitCooldowns[type] > 0) { log(`${type} on cooldown.`); return; }
+  if (G.resources.blue < def.cost) { log('Not enough resources.'); return; }
+  if (countSupply('blue') >= G.supplyCap.blue) { log('Supply cap reached!'); return; }
+  if (!isInDeployZone(mx, my, 'blue')) { log('Must place in deployment zone!'); return; }
+
+  if (spawnUnitAt('blue', type, mx, my)) {
+    G.unitCooldowns[type] = def.cooldown;
+    G.globalDeployCd = GLOBAL_DEPLOY_CD;
+    log(`${type} deployed.`);
+  }
+});
+
+// Artillery
+function triggerArtillery() {
+  if (G.gameover) return;
+  if (G.artilleryCooldown > 0) { log('Artillery on cooldown.'); return; }
+  if (G.resources.blue < 50) { log('Not enough resources for artillery.'); return; }
+  G.artilleryPending = true;
+  viewport.style.cursor = 'crosshair';
+  log('Click on the battlefield to target artillery strike!');
+}
+
+function doArtilleryStrike(x, y, team) {
+  const radius = 90;
+  G.explosions.push({ x, y, r: 0, maxR: radius, life: 600, maxLife: 600, team });
+  G.units.forEach(u => {
+    if (u.dead || u.team === team) return;
+    const d = Math.hypot(u.x - x, u.y - y);
+    if (d < radius) {
+      u.hp -= 80 * (1 - d / radius);
+      if (u.hp <= 0) {
+        u.dead = true;
+        G.kills[team]++;
+        spawnParticles(u.x, u.y, u.team, 8);
+      }
+    }
+  });
+}
+
+// ============================================================================
+//  SCROLLING
+// ============================================================================
+let _scrollVel = 0;
+const EDGE_SCROLL_ZONE = 60;
+const EDGE_SCROLL_SPEED = 400;
+
+viewport.addEventListener('mousemove', e => {
+  const rect = viewport.getBoundingClientRect();
+  const localX = e.clientX - rect.left;
+  const localY = e.clientY - rect.top;
+  const worldX = (localX / rect.width) * VIEW_W + G.scrollX;
+  const worldY = (localY / rect.height) * VIEW_H;
+  G.mouseWorld.x = worldX;
+  G.mouseWorld.y = worldY;
+
+  // Edge scrolling
+  if (localX < EDGE_SCROLL_ZONE) {
+    _scrollVel = -EDGE_SCROLL_SPEED * (1 - localX / EDGE_SCROLL_ZONE);
+  } else if (localX > rect.width - EDGE_SCROLL_ZONE) {
+    _scrollVel = EDGE_SCROLL_SPEED * (1 - (rect.width - localX) / EDGE_SCROLL_ZONE);
+  } else {
+    _scrollVel = 0;
+  }
+});
+
+viewport.addEventListener('mouseleave', () => { _scrollVel = 0; });
+
+// Middle mouse drag scroll
+viewport.addEventListener('mousedown', e => {
+  if (e.button === 1) { // middle click
+    G.scrollDrag = true;
+    G.scrollDragStart = e.clientX;
+    G.scrollDragStartX = G.scrollX;
+    e.preventDefault();
+  }
+});
+window.addEventListener('mousemove', e => {
+  if (G.scrollDrag) {
+    G.scrollX = G.scrollDragStartX - (e.clientX - G.scrollDragStart);
+    G.scrollX = Math.max(0, Math.min(WORLD_W - VIEW_W, G.scrollX));
+  }
+});
+window.addEventListener('mouseup', e => {
+  if (e.button === 1) G.scrollDrag = false;
+});
+
+// Keyboard scroll
+const _keysDown = {};
+window.addEventListener('keydown', e => {
+  _keysDown[e.key] = true;
+  // Number keys to select units
+  if (e.key === '1') selectUnitType('infantry');
+  if (e.key === '2') selectUnitType('tank');
+  if (e.key === '3') selectUnitType('antitank');
+  if (e.key === '4') selectUnitType('support');
+  if (e.key === 'Escape') {
+    G.selectedType = null;
+    G.artilleryPending = false;
+    viewport.style.cursor = 'default';
+    updateButtonSelection();
+  }
+});
+window.addEventListener('keyup', e => { _keysDown[e.key] = false; });
+
+function updateScroll(dt) {
+  let vel = _scrollVel;
+  if (_keysDown['ArrowLeft'] || _keysDown['a']) vel -= EDGE_SCROLL_SPEED;
+  if (_keysDown['ArrowRight'] || _keysDown['d']) vel += EDGE_SCROLL_SPEED;
+  if (vel !== 0) {
+    G.scrollX += vel * (dt / 1000);
+    G.scrollX = Math.max(0, Math.min(WORLD_W - VIEW_W, G.scrollX));
+  }
+}
+
+// ============================================================================
+//  AI LOGIC
+// ============================================================================
+function updateAI(dt) {
+  const r = G.resources.red;
+
+  G.aiDeployCd = Math.max(0, G.aiDeployCd - dt);
+  for (const t in G.aiUnitCds) G.aiUnitCds[t] = Math.max(0, G.aiUnitCds[t] - dt);
+
+  G.aiThinkTimer += dt;
+  if (G.aiThinkTimer < 2000) return;  // Think every 2 seconds
+  G.aiThinkTimer = 0;
+
+  if (G.aiDeployCd > 0) return;
+  if (countSupply('red') >= G.supplyCap.red) return;
+
+  // Analyze lanes
+  const blues = { top: [], bot: [] };
+  const reds  = { top: [], bot: [] };
+  for (const u of G.units) {
+    if (u.dead) continue;
+    if (u.team === 'blue') blues[u.lane].push(u);
+    else reds[u.lane].push(u);
+  }
+
+  // Choose weakest lane to reinforce
+  const topBalance = reds.top.length - blues.top.length;
+  const botBalance = reds.bot.length - blues.bot.length;
+  const targetLane = topBalance <= botBalance ? 'top' : 'bot';
+
+  // Analyze enemy composition in target lane
+  const enemyInLane = blues[targetLane];
+  let enemyTanks = 0, enemyInf = 0, enemyAT = 0;
+  for (const u of enemyInLane) {
+    if (u.type === 'tank') enemyTanks++;
+    else if (u.type === 'infantry') enemyInf++;
+    else if (u.type === 'antitank') enemyAT++;
+  }
+
+  // Pick counter unit
+  let chosenType = 'infantry';
+  if (enemyTanks > enemyInf && enemyTanks > enemyAT && r >= UNIT_DEF.antitank.cost) {
+    chosenType = 'antitank';
+  } else if (enemyAT > enemyInf && r >= UNIT_DEF.infantry.cost) {
+    chosenType = 'infantry';
+  } else if (enemyInf > enemyAT && r >= UNIT_DEF.tank.cost) {
+    chosenType = 'tank';
+  } else if (r >= UNIT_DEF.infantry.cost) {
+    // Random fallback
+    const roll = Math.random();
+    if (roll < 0.4) chosenType = 'infantry';
+    else if (roll < 0.65 && r >= UNIT_DEF.tank.cost) chosenType = 'tank';
+    else if (roll < 0.85 && r >= UNIT_DEF.antitank.cost) chosenType = 'antitank';
+    else if (r >= UNIT_DEF.support.cost) chosenType = 'support';
+  }
+
+  // Occasionally add support
+  const redSupports = reds[targetLane].filter(u => u.type === 'support').length;
+  if (redSupports === 0 && reds[targetLane].length >= 2 && r >= UNIT_DEF.support.cost && Math.random() < 0.3) {
+    chosenType = 'support';
+  }
+
+  if (r < UNIT_DEF[chosenType].cost) return;
+  if (G.aiUnitCds[chosenType] > 0) return;
+
+  // Find deploy position
+  const zones = getDeployZone('red');
+  const zone = zones[targetLane];
+  const x = zone.x1 + Math.random() * (zone.x2 - zone.x1);
+  const y = zone.y1 + Math.random() * (zone.y2 - zone.y1);
+
+  if (spawnUnitAt('red', chosenType, x, y)) {
+    G.aiDeployCd = GLOBAL_DEPLOY_CD + 500; // AI slightly slower deploy
+    G.aiUnitCds[chosenType] = UNIT_DEF[chosenType].cooldown;
+  }
+
+  // AI artillery
+  if (G.frameCount % 600 === 0 && r >= 50) {
+    const blueUnits = liveUnits('blue');
+    if (blueUnits.length > 3) {
+      const target = blueUnits[Math.floor(Math.random() * blueUnits.length)];
+      G.resources.red -= 50;
+      setTimeout(() => doArtilleryStrike(target.x, target.y, 'red'), 900);
+    }
+  }
+}
+
+// ============================================================================
+//  TERRITORY & FRONTLINE
+// ============================================================================
+function updateFrontline(dt) {
+  ['top', 'bot'].forEach(lane => {
+    const blues = liveUnits('blue').filter(u => u.lane === lane);
+    const reds  = liveUnits('red').filter(u => u.lane === lane);
+
+    let target = G.frontline[lane];
+    if (blues.length === 0 && reds.length === 0) {
+      target = WORLD_W / 2;
+    } else if (blues.length === 0) {
+      target = G.frontline[lane] - 80 * (dt / 1000);
+    } else if (reds.length === 0) {
+      target = G.frontline[lane] + 80 * (dt / 1000);
+    } else {
+      let bP = 0, rP = 0;
+      for (const u of blues) bP += (u.x - BASE_W) / (WORLD_W - BASE_W * 2);
+      for (const u of reds)  rP += (WORLD_W - BASE_W - u.x) / (WORLD_W - BASE_W * 2);
+      const net = (bP - rP);
+      target = G.frontline[lane] + net * 14 * (dt / 1000);
+    }
+    G.frontline[lane] += (target - G.frontline[lane]) * 0.04;
+    G.frontline[lane] = Math.max(BASE_W, Math.min(WORLD_W - BASE_W, G.frontline[lane]));
+    G.lanePressure[lane] = G.frontline[lane] / WORLD_W;
   });
 
-  function doArtilleryStrike(x, y, team) {
-    const radius = 85;
-    G.explosions.push({ x, y, r: 0, maxR: radius, life: 600, maxLife: 600, team });
-    const enemy = team === 'blue' ? 'red' : 'blue';
-    G.units.forEach(u => {
-      if (u.dead || u.team === team) return;
-      const d = Math.hypot(u.x - x, u.y - y);
-      if (d < radius) {
-        u.hp -= 90 * (1 - d / radius);
-        if (u.hp <= 0) {
-          u.dead = true;
-          G.kills[team]++;
-          spawnParticles(u.x, u.y, u.team, 8);
-        }
-      }
-    });
+  G.territory = (G.lanePressure.top + G.lanePressure.bot) / 2;
+}
+
+// ============================================================================
+//  RESOURCES
+// ============================================================================
+function updateResources(dt) {
+  const baseRate = 5;
+  G.resources.blue = Math.min(999, G.resources.blue + (baseRate + G.territory * 3) * (dt / 1000));
+  G.resources.red  = Math.min(999, G.resources.red  + (baseRate + (1 - G.territory) * 3) * (dt / 1000));
+}
+
+// ============================================================================
+//  SUPPLY CAP (grows over time)
+// ============================================================================
+function updateSupply(dt) {
+  G.matchTime += dt;
+  // Supply cap increases by 1 every 30 seconds, max 20
+  const newCap = Math.min(20, 10 + Math.floor(G.matchTime / 30000));
+  G.supplyCap.blue = newCap;
+  G.supplyCap.red  = newCap;
+  G.supplyUsed.blue = countSupply('blue');
+  G.supplyUsed.red  = countSupply('red');
+}
+
+// ============================================================================
+//  COOLDOWNS
+// ============================================================================
+function updateCooldowns(dt) {
+  for (const t in G.unitCooldowns) {
+    G.unitCooldowns[t] = Math.max(0, G.unitCooldowns[t] - dt);
   }
+  G.globalDeployCd = Math.max(0, G.globalDeployCd - dt);
+  G.artilleryCooldown = Math.max(0, G.artilleryCooldown - dt);
+}
 
-  // Airdrop
-  function triggerAirdrop() {
-    if (G.gameover) return;
-    if (G.airdropCooldown > 0) { log('Airdrop on cooldown.'); return; }
-    if (G.resources.blue < 50) { log('Not enough resources for airdrop.'); return; }
-    G.resources.blue  -= 50;
-    G.airdropCooldown  = G.airdropMaxCD;
-    // Spawn 4 infantry near the frontline
-    for (let i = 0; i < 4; i++) {
-      const x = G.frontline - 40 + Math.random() * 30;
-      const y = 50 + Math.random() * (H - 60);
-      G.units.push(new Unit('blue', 'infantry', Math.max(BASE_W + 5, x), y));
-    }
-    log('Airdrop! 4 infantry deployed near the frontline.');
+// ============================================================================
+//  VICTORY
+// ============================================================================
+function checkVictory(dt) {
+  if (G.gameover) return;
+  const dmgPerUnit = 15;
+  const redInBlueBase = G.units.filter(u => !u.dead && u.team === 'red'  && u.x < BASE_W + 15);
+  const blueInRedBase = G.units.filter(u => !u.dead && u.team === 'blue' && u.x > WORLD_W - BASE_W - 15);
+
+  if (redInBlueBase.length > 0) {
+    G.baseHp.blue -= redInBlueBase.length * dmgPerUnit * (dt / 1000);
+    if (G.baseHp.blue <= 0) { G.gameover = true; G.winner = 'red'; return; }
   }
-
-  let _upgradesSold = 0;
-  function upgradeSpawn() {
-    if (G.gameover) return;
-    const cost = 80 + _upgradesSold * 40;
-    if (G.resources.blue < cost) { log(`Need ${cost} resources to upgrade spawn rate.`); return; }
-    G.resources.blue   -= cost;
-    G.spawnInterval.blue = Math.max(1200, G.spawnInterval.blue - 400);
-    G.spawnLevel.blue++;
-    _upgradesSold++;
-    log(`Spawn interval reduced to ${(G.spawnInterval.blue/1000).toFixed(1)}s.`);
+  if (blueInRedBase.length > 0) {
+    G.baseHp.red -= blueInRedBase.length * dmgPerUnit * (dt / 1000);
+    if (G.baseHp.red <= 0) { G.gameover = true; G.winner = 'blue'; return; }
   }
+}
 
-  // ─── AI logic ────────────────────────────────────────────────────────────────
-  function updateAI(dt) {
-    const r  = G.resources.red;
-    const fl = G.frontline / W; // 0=red wins, 1=blue wins
-
-    // Upgrade spawn rate if winning or flush with cash
-    G.aiUpgradeTimer += dt;
-    if (G.aiUpgradeTimer > 18000) {
-      G.aiUpgradeTimer = 0;
-      if (r >= 100 && G.spawnInterval.red > 1400) {
-        G.resources.red -= 80;
-        G.spawnInterval.red = Math.max(1400, G.spawnInterval.red - 350);
-        G.spawnLevel.red++;
-      }
-    }
-
-    // Spend resources on units based on situation
-    if (fl < 0.35 && r >= 60) {
-      // Blue is pushing hard — respond with tanks
-      spawnUnit('red', 'tank');
-    } else if (fl > 0.65 && r >= 40) {
-      // Red is winning — keep pushing with ranged
-      spawnUnit('red', Math.random() > 0.5 ? 'ranged' : 'infantry');
-    } else if (r >= 40) {
-      // Normal — mix
-      const roll = Math.random();
-      if      (roll < 0.5 && r >= 20)  spawnUnit('red', 'infantry');
-      else if (roll < 0.75 && r >= 40) spawnUnit('red', 'ranged');
-      else if (r >= 60)                spawnUnit('red', 'tank');
-    }
-
-    // AI artillery (simple: fire when lots of blue units clustered)
-    // (no cooldown tracked for AI for MVP simplicity — just periodic)
-    if (G.frameCount % 480 === 0 && r >= 40) {
-      // Fire at the densest cluster of blue units
-      const blues = G.units.filter(u => !u.dead && u.team === 'blue');
-      if (blues.length > 3) {
-        const target = blues[Math.floor(Math.random() * blues.length)];
-        G.resources.red -= 40;
-        setTimeout(() => doArtilleryStrike(target.x, target.y, 'red'), 900);
-      }
-    }
+// ============================================================================
+//  FOG OF WAR HELPERS
+// ============================================================================
+function isVisibleToPlayer(u) {
+  // Blue units always visible to player
+  if (u.team === 'blue') return true;
+  // Check if any blue unit can see this red unit
+  for (const b of G.units) {
+    if (b.dead || b.team !== 'blue') continue;
+    const d = Math.hypot(b.x - u.x, b.y - u.y);
+    if (d <= b.vision) return true;
   }
+  return false;
+}
 
-  // ─── Wave system (escalation) ─────────────────────────────────────────────
-  function updateWave(dt) {
-    G.waveTimer += dt;
-    if (G.waveTimer >= 30000) {
-      G.waveTimer = 0;
-      G.wave++;
-      // Both sides get a boost
-      G.resources.blue += 30;
-      G.resources.red  += 30;
-      log(`Wave ${G.wave}! Both sides receive resource bonus.`);
-    }
-  }
+// ============================================================================
+//  RENDERING
+// ============================================================================
+function render() {
+  ctx.clearRect(0, 0, WORLD_W, WORLD_H);
 
-  // ─── Frontline calculation ───────────────────────────────────────────────────
-  function updateFrontline(dt) {
-    const live = G.units.filter(u => !u.dead);
-    const blues = live.filter(u => u.team === 'blue');
-    const reds  = live.filter(u => u.team === 'red');
+  // Compute average frontline for background split
+  const avgFL = (G.frontline.top + G.frontline.bot) / 2;
 
-    let target = G.frontline;
+  // Territory background
+  const bgBlue = ctx.createLinearGradient(0, 0, avgFL, 0);
+  bgBlue.addColorStop(0, '#060d1f');
+  bgBlue.addColorStop(1, '#0e2550');
+  ctx.fillStyle = bgBlue;
+  ctx.fillRect(0, 0, avgFL, WORLD_H);
 
-    if (blues.length === 0 && reds.length === 0) {
-      // nothing — drift toward centre very slowly
-      target = W / 2;
-    } else if (blues.length === 0) {
-      target = G.frontline - 100 * (dt / 1000);
-    } else if (reds.length === 0) {
-      target = G.frontline + 100 * (dt / 1000);
-    } else {
-      // Weighted pressure: each unit contributes based on advancement into enemy half
-      let bP = 0, rP = 0;
-      for (const u of blues) bP += (u.x - BASE_W) / (W - BASE_W * 2);
-      for (const u of reds)  rP += (W - BASE_W - u.x) / (W - BASE_W * 2);
-      const net = (bP - rP);            // positive = blue pushing
-      target = G.frontline + net * 18 * (dt / 1000);
-    }
+  const bgRed = ctx.createLinearGradient(avgFL, 0, WORLD_W, 0);
+  bgRed.addColorStop(0, '#2a0808');
+  bgRed.addColorStop(1, '#080606');
+  ctx.fillStyle = bgRed;
+  ctx.fillRect(avgFL, 0, WORLD_W - avgFL, WORLD_H);
 
-    // Smooth
-    G.frontline += (target - G.frontline) * 0.06;
-    G.frontline  = Math.max(5, Math.min(W - 5, G.frontline));
-    G.territory  = G.frontline / W;
-  }
+  // Lane divider
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([8, 8]);
+  ctx.beginPath();
+  ctx.moveTo(0, LANE_DIV_Y);
+  ctx.lineTo(WORLD_W, LANE_DIV_Y);
+  ctx.stroke();
+  ctx.setLineDash([]);
 
-  // ─── Resource generation ─────────────────────────────────────────────────────
-  function updateResources(dt) {
-    const baseRate = 6; // per second
-    G.resources.blue = Math.min(999, G.resources.blue + (baseRate + G.territory * 4)       * (dt / 1000));
-    G.resources.red  = Math.min(999, G.resources.red  + (baseRate + (1 - G.territory) * 4) * (dt / 1000));
-  }
+  // Lane labels
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('TOP LANE', 70, TERRITORY_BAR_H + 20);
+  ctx.fillText('BOTTOM LANE', 70, LANE_DIV_Y + 20);
 
-  // ─── Base damage + victory check ─────────────────────────────────────────────
-  function checkVictory(dt) {
-    if (G.gameover) return;
-
-    // Units inside enemy base deal damage to it
-    const dmgPerUnit = 20; // HP per second per unit inside base
-    const redInBlueBase = G.units.filter(u => !u.dead && u.team === 'red'  && u.x < BASE_W + 15);
-    const blueInRedBase = G.units.filter(u => !u.dead && u.team === 'blue' && u.x > W - BASE_W - 15);
-
-    if (redInBlueBase.length > 0) {
-      G.baseHp.blue -= redInBlueBase.length * dmgPerUnit * (dt / 1000);
-      if (G.baseHp.blue <= 0) { G.gameover = true; G.winner = 'red'; return; }
-    }
-    if (blueInRedBase.length > 0) {
-      G.baseHp.red -= blueInRedBase.length * dmgPerUnit * (dt / 1000);
-      if (G.baseHp.red <= 0) { G.gameover = true; G.winner = 'blue'; return; }
-    }
-
-    // Frontline fallback (territorial domination)
-    if (G.frontline >= W - BASE_W) { G.gameover = true; G.winner = 'blue'; }
-    if (G.frontline <= BASE_W)     { G.gameover = true; G.winner = 'red';  }
-  }
-
-  // ─── Visual helpers ──────────────────────────────────────────────────────────
-  function spawnProjectile(from, to) {
-    G.projectiles.push({
-      x: from.x, y: from.y,
-      tx: to.x,  ty: to.y,
-      team: from.team,
-      type: from.type,
-      life: 200, maxLife: 200,
-    });
-  }
-
-  function spawnParticles(x, y, team, n) {
-    for (let i = 0; i < n; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 20 + Math.random() * 60;
-      G.particles.push({
-        x, y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life: 300 + Math.random() * 300,
-        maxLife: 600,
-        team,
-        size: 2 + Math.random() * 2,
-      });
-    }
-  }
-
-  // ─── Rendering ───────────────────────────────────────────────────────────────
-  function render() {
-    ctx.clearRect(0, 0, W, H);
-
-    // ── Territory background ─────────────────────────────────────────────────
-    const fl = G.frontline;
-
-    // Blue side
-    const bgBlue = ctx.createLinearGradient(0, 0, fl, 0);
-    bgBlue.addColorStop(0, '#060d1f');
-    bgBlue.addColorStop(1, '#0e2550');
-    ctx.fillStyle = bgBlue;
-    ctx.fillRect(0, 0, fl, H);
-
-    // Red side
-    const bgRed = ctx.createLinearGradient(fl, 0, W, 0);
-    bgRed.addColorStop(0, '#2a0808');
-    bgRed.addColorStop(1, '#080606');
-    ctx.fillStyle = bgRed;
-    ctx.fillRect(fl, 0, W - fl, H);
-
-    // Frontline glow
-    const glow = ctx.createLinearGradient(fl - 25, 0, fl + 25, 0);
+  // Per-lane frontline glow
+  ['top', 'bot'].forEach(lane => {
+    const fl = G.frontline[lane];
+    const yStart = lane === 'top' ? TERRITORY_BAR_H : LANE_DIV_Y;
+    const yEnd   = lane === 'top' ? LANE_DIV_Y : WORLD_H;
+    const glow = ctx.createLinearGradient(fl - 30, 0, fl + 30, 0);
     glow.addColorStop(0,   'rgba(80, 140, 255, 0)');
-    glow.addColorStop(0.5, 'rgba(220, 220, 255, 0.55)');
+    glow.addColorStop(0.5, 'rgba(220, 220, 255, 0.35)');
     glow.addColorStop(1,   'rgba(255, 80, 80, 0)');
     ctx.fillStyle = glow;
-    ctx.fillRect(fl - 25, 0, 50, H);
+    ctx.fillRect(fl - 30, yStart, 60, yEnd - yStart);
+  });
 
-    // ── Territory bar (top strip) ────────────────────────────────────────────
-    const barH  = 22;
-    const bluePct = G.territory;
-
-    ctx.fillStyle = '#1a3a7a';
-    ctx.fillRect(0, 0, W * bluePct, barH);
-    ctx.fillStyle = '#7a1a1a';
-    ctx.fillRect(W * bluePct, 0, W * (1 - bluePct), barH);
-
-    // Border
-    ctx.strokeStyle = '#333';
+  // Deployment zones (only when a unit is selected)
+  if (G.selectedType) {
+    const zones = getDeployZone('blue');
+    ctx.fillStyle = 'rgba(50, 120, 255, 0.08)';
+    ctx.strokeStyle = 'rgba(50, 120, 255, 0.3)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(0, 0, W, barH);
-
-    // Labels
-    ctx.fillStyle = '#aaccff';
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`BLUE ${Math.round(bluePct * 100)}%`, 6, 15);
-    ctx.fillStyle = '#ffaaaa';
-    ctx.textAlign = 'right';
-    ctx.fillText(`${Math.round((1 - bluePct) * 100)}% RED`, W - 6, 15);
-
-    // Centre marker
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, barH); ctx.stroke();
+    ctx.setLineDash([6, 4]);
+    ['top', 'bot'].forEach(lane => {
+      const z = zones[lane];
+      ctx.fillRect(z.x1, z.y1, z.x2 - z.x1, z.y2 - z.y1);
+      ctx.strokeRect(z.x1, z.y1, z.x2 - z.x1, z.y2 - z.y1);
+    });
     ctx.setLineDash([]);
+  }
 
-    // ── Bases ────────────────────────────────────────────────────────────────
-    function drawBase(team) {
-      const bx   = team === 'blue' ? BASE_BLUE_X : BASE_RED_X;
-      const by   = H / 2 - BASE_H / 2;
-      const hp   = G.baseHp[team];
-      const mhp  = G.baseMaxHp[team];
-      const col  = team === 'blue' ? '#3366cc' : '#cc3333';
-      const lite = team === 'blue' ? '#5588ff' : '#ff5555';
+  // Fog of war overlay for areas outside blue vision
+  renderFog();
 
-      ctx.fillStyle = col;
-      ctx.fillRect(bx, by, BASE_W, BASE_H);
-      ctx.strokeStyle = lite;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(bx, by, BASE_W, BASE_H);
+  // Territory bar
+  const barH = TERRITORY_BAR_H;
+  const bluePct = G.territory;
+  ctx.fillStyle = '#1a3a7a';
+  ctx.fillRect(0, 0, WORLD_W * bluePct, barH);
+  ctx.fillStyle = '#7a1a1a';
+  ctx.fillRect(WORLD_W * bluePct, 0, WORLD_W * (1 - bluePct), barH);
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, WORLD_W, barH);
+  ctx.fillStyle = '#aaccff';
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`BLUE ${Math.round(bluePct * 100)}%`, 6, 16);
+  ctx.fillStyle = '#ffaaaa';
+  ctx.textAlign = 'right';
+  ctx.fillText(`${Math.round((1 - bluePct) * 100)}% RED`, WORLD_W - 6, 16);
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(WORLD_W / 2, 0); ctx.lineTo(WORLD_W / 2, barH); ctx.stroke();
+  ctx.setLineDash([]);
 
-      // label
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 10px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('BASE', bx + BASE_W / 2, by + BASE_H / 2 - 4);
+  // Bases
+  drawBase('blue');
+  drawBase('red');
 
-      // hp bar
-      const hpRatio = hp / mhp;
-      const bpx = bx + 4; const bpy = by + BASE_H - 10;
-      const bpw = BASE_W - 8;
-      ctx.fillStyle = '#222';
-      ctx.fillRect(bpx, bpy, bpw, 6);
-      ctx.fillStyle = hpRatio > 0.5 ? '#44cc44' : hpRatio > 0.25 ? '#cc8800' : '#cc2222';
-      ctx.fillRect(bpx, bpy, bpw * hpRatio, 6);
+  // Heal beams
+  for (const b of G.healBeams) {
+    const alpha = b.life / b.maxLife;
+    ctx.strokeStyle = b.team === 'blue'
+      ? `rgba(80, 255, 120, ${alpha * 0.7})`
+      : `rgba(255, 120, 80, ${alpha * 0.7})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(b.x1, b.y1);
+    ctx.lineTo(b.x2, b.y2);
+    ctx.stroke();
+  }
+
+  // Particles
+  for (const p of G.particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.fillStyle = p.team === 'blue'
+      ? `rgba(100, 160, 255, ${alpha})`
+      : `rgba(255, 100, 80, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Explosions
+  for (const exp of G.explosions) {
+    const t = 1 - exp.life / exp.maxLife;
+    const r = exp.maxR * Math.min(1, t * 2.5);
+    const alpha = exp.life / exp.maxLife;
+    const grad = ctx.createRadialGradient(exp.x, exp.y, 0, exp.x, exp.y, r);
+    grad.addColorStop(0, `rgba(255,255,180,${alpha})`);
+    grad.addColorStop(0.4, `rgba(255,160,30,${alpha * 0.8})`);
+    grad.addColorStop(1, 'rgba(255,60,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(exp.x, exp.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255,200,100,${alpha * 0.5})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(exp.x, exp.y, r * 1.15, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Projectiles
+  for (const p of G.projectiles) {
+    const t  = 1 - p.life / p.maxLife;
+    const px = p.x + (p.tx - p.x) * t;
+    const py = p.y + (p.ty - p.y) * t;
+    const isAT = p.type === 'antitank';
+    ctx.fillStyle = p.team === 'blue'
+      ? (isAT ? '#ffcc44' : '#6699ff')
+      : (isAT ? '#ffcc44' : '#ff7766');
+    ctx.beginPath();
+    ctx.arc(px, py, isAT ? 3 : 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Units
+  for (const u of G.units) {
+    if (u.dead) continue;
+    u.visible = isVisibleToPlayer(u);
+    if (u.team === 'red' && !u.visible) continue; // Hidden by fog
+
+    const isBlue = u.team === 'blue';
+    let fill, stroke;
+    if (u.type === 'antitank') {
+      fill   = isBlue ? '#dd9922' : '#dd6622';
+      stroke = isBlue ? '#ffcc66' : '#ff9944';
+    } else if (u.type === 'support') {
+      fill   = isBlue ? '#22bb66' : '#bb4422';
+      stroke = isBlue ? '#66ffaa' : '#ff8866';
+    } else if (u.type === 'tank') {
+      fill   = isBlue ? '#3366cc' : '#cc3333';
+      stroke = isBlue ? '#6699ff' : '#ff6666';
+    } else {
+      fill   = isBlue ? '#4488ff' : '#ff4444';
+      stroke = isBlue ? '#aaccff' : '#ffaaaa';
     }
-    drawBase('blue');
-    drawBase('red');
 
-    // ── Particles ────────────────────────────────────────────────────────────
-    for (const p of G.particles) {
-      const alpha = p.life / p.maxLife;
-      ctx.fillStyle = p.team === 'blue'
-        ? `rgba(100, 160, 255, ${alpha})`
-        : `rgba(255, 100, 80, ${alpha})`;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
 
-    // ── Explosions ───────────────────────────────────────────────────────────
-    for (const exp of G.explosions) {
-      const t     = 1 - exp.life / exp.maxLife;
-      const r     = exp.maxR * Math.min(1, t * 2.5);
-      const alpha = exp.life / exp.maxLife;
-      const grad  = ctx.createRadialGradient(exp.x, exp.y, 0, exp.x, exp.y, r);
-      grad.addColorStop(0,   `rgba(255, 255, 180, ${alpha})`);
-      grad.addColorStop(0.4, `rgba(255, 160, 30,  ${alpha * 0.8})`);
-      grad.addColorStop(1,   'rgba(255, 60, 0, 0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(exp.x, exp.y, r, 0, Math.PI * 2);
-      ctx.fill();
-
-      // shockwave ring
-      ctx.strokeStyle = `rgba(255, 200, 100, ${alpha * 0.5})`;
+    if (u.type === 'tank') {
+      const s = u.size;
+      ctx.fillRect(u.x - s, u.y - s, s * 2, s * 2);
+      ctx.strokeRect(u.x - s, u.y - s, s * 2, s * 2);
+      const barDir = isBlue ? 1 : -1;
+      ctx.strokeStyle = stroke;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(exp.x, exp.y, r * 1.15, 0, Math.PI * 2);
+      ctx.moveTo(u.x, u.y);
+      ctx.lineTo(u.x + barDir * s * 1.6, u.y);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    } else if (u.type === 'antitank') {
+      const s = u.size;
+      ctx.beginPath();
+      ctx.moveTo(u.x, u.y - s);
+      ctx.lineTo(u.x + s, u.y);
+      ctx.lineTo(u.x, u.y + s);
+      ctx.lineTo(u.x - s, u.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (u.type === 'support') {
+      // Cross shape
+      const s = u.size;
+      ctx.fillRect(u.x - s, u.y - s * 0.35, s * 2, s * 0.7);
+      ctx.fillRect(u.x - s * 0.35, u.y - s, s * 0.7, s * 2);
+      ctx.strokeRect(u.x - s, u.y - s, s * 2, s * 2);
+    } else {
+      ctx.beginPath();
+      ctx.arc(u.x, u.y, u.size, 0, Math.PI * 2);
+      ctx.fill();
       ctx.stroke();
     }
 
-    // ── Projectiles ──────────────────────────────────────────────────────────
-    for (const p of G.projectiles) {
-      const t  = 1 - p.life / p.maxLife;
-      const px = p.x + (p.tx - p.x) * t;
-      const py = p.y + (p.ty - p.y) * t;
-      const isRanged = p.type === 'ranged';
-      ctx.fillStyle = p.team === 'blue'
-        ? (isRanged ? '#88ccff' : '#6699ff')
-        : (isRanged ? '#ffcc88' : '#ff7766');
-      ctx.beginPath();
-      ctx.arc(px, py, isRanged ? 3 : 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // ── Units ────────────────────────────────────────────────────────────────
-    for (const u of G.units) {
-      if (u.dead) continue;
-
-      const isBlue = u.team === 'blue';
-      const fill   = isBlue ? '#4488ff' : '#ff4444';
-      const stroke = isBlue ? '#aaccff' : '#ffaaaa';
-
-      ctx.fillStyle   = fill;
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth   = 1;
-
-      if (u.type === 'tank') {
-        const s = u.size;
-        ctx.fillRect(u.x - s, u.y - s, s * 2, s * 2);
-        ctx.strokeRect(u.x - s, u.y - s, s * 2, s * 2);
-        // barrel
-        const barDir = isBlue ? 1 : -1;
-        ctx.strokeStyle = stroke;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(u.x, u.y);
-        ctx.lineTo(u.x + barDir * s * 1.6, u.y);
-        ctx.stroke();
-        ctx.lineWidth = 1;
-      } else if (u.type === 'ranged') {
-        // diamond
-        const s = u.size;
-        ctx.beginPath();
-        ctx.moveTo(u.x, u.y - s);
-        ctx.lineTo(u.x + s, u.y);
-        ctx.lineTo(u.x, u.y + s);
-        ctx.lineTo(u.x - s, u.y);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      } else {
-        // infantry circle
-        ctx.beginPath();
-        ctx.arc(u.x, u.y, u.size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-
-      // HP bar (only when damaged)
-      if (u.hp < u.maxHp) {
-        const bw  = u.size * 3;
-        const bh  = 3;
-        const bx  = u.x - bw / 2;
-        const by  = u.y - u.size - 6;
-        ctx.fillStyle = '#111';
-        ctx.fillRect(bx, by, bw, bh);
-        const ratio = u.hp / u.maxHp;
-        ctx.fillStyle = ratio > 0.5 ? '#44dd44' : ratio > 0.25 ? '#ddaa00' : '#dd2222';
-        ctx.fillRect(bx, by, bw * ratio, bh);
-      }
-    }
-
-    // ── Artillery targeting indicator ────────────────────────────────────────
-    if (G.artilleryPending) {
-      ctx.strokeStyle = 'rgba(255, 220, 50, 0.7)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-      ctx.strokeRect(4, 4, W - 8, H - 8);
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(255, 220, 50, 0.85)';
-      ctx.font = 'bold 14px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('CLICK TO TARGET ARTILLERY', W / 2, H / 2);
-    }
-
-    // ── Game over overlay ────────────────────────────────────────────────────
-    if (G.gameover) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
-      ctx.fillRect(0, 0, W, H);
-      const winCol = G.winner === 'blue' ? '#5599ff' : '#ff5555';
-      ctx.fillStyle = winCol;
-      ctx.font = 'bold 52px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(G.winner.toUpperCase() + ' WINS', W / 2, H / 2 - 10);
-      ctx.fillStyle = '#aaa';
-      ctx.font = '16px monospace';
-      ctx.fillText('Refresh to play again', W / 2, H / 2 + 30);
+    // HP bar
+    if (u.hp < u.maxHp) {
+      const bw = u.size * 3;
+      const bh = 3;
+      const bx = u.x - bw / 2;
+      const by = u.y - u.size - 6;
+      ctx.fillStyle = '#111';
+      ctx.fillRect(bx, by, bw, bh);
+      const ratio = u.hp / u.maxHp;
+      ctx.fillStyle = ratio > 0.5 ? '#44dd44' : ratio > 0.25 ? '#ddaa00' : '#dd2222';
+      ctx.fillRect(bx, by, bw * ratio, bh);
     }
   }
 
-  // ─── UI update ───────────────────────────────────────────────────────────────
-  function updateUI() {
-    document.getElementById('blue-res').textContent = Math.floor(G.resources.blue);
-    document.getElementById('red-res').textContent  = Math.floor(G.resources.red);
-
-    const blues = G.units.filter(u => !u.dead && u.team === 'blue').length;
-    const reds  = G.units.filter(u => !u.dead && u.team === 'red').length;
-    document.getElementById('stat-blue-units').textContent = blues;
-    document.getElementById('stat-red-units').textContent  = reds;
-    document.getElementById('stat-blue-kills').textContent = G.kills.blue;
-    document.getElementById('stat-red-kills').textContent  = G.kills.red;
-    document.getElementById('stat-wave').textContent       = G.wave;
-    document.getElementById('red-spawn-rate').textContent  = (G.spawnInterval.red / 1000).toFixed(1);
-    document.getElementById('red-spawn-lvl').textContent   = G.spawnLevel.red;
-
-    // Buttons
-    const r = G.resources.blue;
-    document.getElementById('btn-infantry').disabled = r < 20;
-    document.getElementById('btn-tank').disabled     = r < 60;
-    document.getElementById('btn-ranged').disabled   = r < 40;
-
-    const artyBtn = document.getElementById('btn-arty');
-    if (G.artilleryCooldown > 0) {
-      artyBtn.textContent = `Artillery (${Math.ceil(G.artilleryCooldown / 1000)}s)`;
-      artyBtn.disabled = true;
-    } else {
-      artyBtn.textContent = 'Artillery (40) \uD83D\uDCA5';
-      artyBtn.disabled = r < 40;
-    }
-
-    const dropBtn = document.getElementById('btn-drop');
-    if (G.airdropCooldown > 0) {
-      dropBtn.textContent = `Airdrop (${Math.ceil(G.airdropCooldown / 1000)}s)`;
-      dropBtn.disabled = true;
-    } else {
-      dropBtn.textContent = 'Airdrop (50) \u2708';
-      dropBtn.disabled = r < 50;
-    }
-
-    const nextUpgCost = 80 + _upgradesSold * 40;
-    const upBtn = document.getElementById('btn-upgrade');
-    upBtn.textContent = `Faster Spawn (${nextUpgCost}) \u2191`;
-    upBtn.disabled = r < nextUpgCost;
+  // Placement preview
+  if (G.selectedType && !G.artilleryPending) {
+    const mx = G.mouseWorld.x;
+    const my = G.mouseWorld.y;
+    const valid = isInDeployZone(mx, my, 'blue')
+      && G.globalDeployCd <= 0
+      && G.unitCooldowns[G.selectedType] <= 0
+      && G.resources.blue >= UNIT_DEF[G.selectedType].cost
+      && countSupply('blue') < G.supplyCap.blue;
+    const s = UNIT_DEF[G.selectedType].size;
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = valid ? '#5599ff' : '#ff3333';
+    ctx.beginPath();
+    ctx.arc(mx, my, s + 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Vision radius preview
+    ctx.strokeStyle = valid ? 'rgba(80,160,255,0.2)' : 'rgba(255,50,50,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(mx, my, UNIT_DEF[G.selectedType].vision, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
   }
 
-  // ─── Log ─────────────────────────────────────────────────────────────────────
-  function log(msg) {
-    document.getElementById('log').textContent = msg;
+  // Artillery targeting
+  if (G.artilleryPending) {
+    const mx = G.mouseWorld.x;
+    const my = G.mouseWorld.y;
+    ctx.strokeStyle = 'rgba(255, 220, 50, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.arc(mx, my, 90, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255, 220, 50, 0.7)';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('CLICK TO TARGET ARTILLERY', WORLD_W / 2, WORLD_H / 2);
   }
 
-  // ─── Main game loop ──────────────────────────────────────────────────────────
-  function gameLoop(ts) {
-    if (!G.lastTime) G.lastTime = ts;
-    const dt = Math.min(ts - G.lastTime, 100); // cap delta at 100ms
-    G.lastTime = ts;
-    G.frameCount++;
+  // Game over
+  if (G.gameover) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    const winCol = G.winner === 'blue' ? '#5599ff' : '#ff5555';
+    ctx.fillStyle = winCol;
+    ctx.font = 'bold 52px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(G.winner.toUpperCase() + ' WINS', WORLD_W / 2, WORLD_H / 2 - 10);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '16px monospace';
+    ctx.fillText('Refresh to play again', WORLD_W / 2, WORLD_H / 2 + 30);
+  }
 
-    if (!G.gameover) {
-      updateResources(dt);
-      updateWave(dt);
+  // Apply scroll viewport
+  viewport.scrollLeft = G.scrollX;
+}
 
-      // Auto-spawn
-      autoSpawn('blue', dt);
-      autoSpawn('red',  dt);
+function renderFog() {
+  // Create fog overlay — dim areas not visible to any blue unit
+  ctx.fillStyle = 'rgba(0, 0, 10, 0.45)';
+  ctx.fillRect(0, TERRITORY_BAR_H, WORLD_W, WORLD_H - TERRITORY_BAR_H);
 
-      // AI
-      updateAI(dt);
+  // Cut out visible circles for each blue unit
+  ctx.globalCompositeOperation = 'destination-out';
+  for (const u of G.units) {
+    if (u.dead || u.team !== 'blue') continue;
+    const grad = ctx.createRadialGradient(u.x, u.y, u.vision * 0.5, u.x, u.y, u.vision);
+    grad.addColorStop(0, 'rgba(0,0,0,1)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(u.x, u.y, u.vision, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Also reveal deployment zones lightly
+  const zones = getDeployZone('blue');
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ['top', 'bot'].forEach(lane => {
+    const z = zones[lane];
+    ctx.fillRect(z.x1, z.y1, z.x2 - z.x1, z.y2 - z.y1);
+  });
+  ctx.globalCompositeOperation = 'source-over';
+}
 
-      // Update units
-      for (const u of G.units) u.update(dt, G.units);
-      G.units = G.units.filter(u => !u.dead);
+function drawBase(team) {
+  const bx  = team === 'blue' ? 0 : WORLD_W - BASE_W;
+  const byT = LANE_TOP_CENTER - BASE_H / 2;
+  const byB = LANE_BOT_CENTER - BASE_H / 2;
+  const hp  = G.baseHp[team];
+  const mhp = G.baseMaxHp[team];
+  const col  = team === 'blue' ? '#3366cc' : '#cc3333';
+  const lite = team === 'blue' ? '#5588ff' : '#ff5555';
 
-      // Cap unit count to prevent runaway lag
-      if (G.units.length > 200) {
-        G.units = G.units.slice(G.units.length - 200);
-      }
+  [byT, byB].forEach(by => {
+    ctx.fillStyle = col;
+    ctx.fillRect(bx, by, BASE_W, BASE_H);
+    ctx.strokeStyle = lite;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bx, by, BASE_W, BASE_H);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('BASE', bx + BASE_W / 2, by + BASE_H / 2 - 4);
+    const hpRatio = hp / mhp;
+    const bpx = bx + 4;
+    const bpy = by + BASE_H - 10;
+    const bpw = BASE_W - 8;
+    ctx.fillStyle = '#222';
+    ctx.fillRect(bpx, bpy, bpw, 6);
+    ctx.fillStyle = hpRatio > 0.5 ? '#44cc44' : hpRatio > 0.25 ? '#cc8800' : '#cc2222';
+    ctx.fillRect(bpx, bpy, bpw * hpRatio, 6);
+  });
+}
 
-      // Update projectiles
-      for (const p of G.projectiles) p.life -= dt;
-      G.projectiles = G.projectiles.filter(p => p.life > 0);
+// ============================================================================
+//  UI UPDATE
+// ============================================================================
+function updateUI() {
+  document.getElementById('blue-res').textContent = Math.floor(G.resources.blue);
+  document.getElementById('red-res').textContent  = Math.floor(G.resources.red);
 
-      // Update explosions
-      for (const e of G.explosions) e.life -= dt;
-      G.explosions = G.explosions.filter(e => e.life > 0);
+  document.getElementById('supply-cur').textContent = G.supplyUsed.blue;
+  document.getElementById('supply-max').textContent = G.supplyCap.blue;
+  document.getElementById('supply-fill').style.width = (G.supplyUsed.blue / G.supplyCap.blue * 100) + '%';
 
-      // Update particles
-      for (const p of G.particles) {
-        p.x    += p.vx * (dt / 1000);
-        p.y    += p.vy * (dt / 1000);
-        p.vx   *= 0.92;
-        p.vy   *= 0.92;
-        p.life -= dt;
-      }
-      G.particles = G.particles.filter(p => p.life > 0);
+  document.getElementById('red-supply').textContent     = G.supplyUsed.red;
+  document.getElementById('red-supply-max').textContent  = G.supplyCap.red;
 
-      // Cooldowns
-      G.artilleryCooldown = Math.max(0, G.artilleryCooldown - dt);
-      G.airdropCooldown   = Math.max(0, G.airdropCooldown   - dt);
+  const blues = liveUnits('blue').length;
+  const reds  = liveUnits('red').length;
+  document.getElementById('stat-blue-units').textContent = blues;
+  document.getElementById('stat-red-units').textContent  = reds;
+  document.getElementById('stat-blue-kills').textContent = G.kills.blue;
+  document.getElementById('stat-red-kills').textContent  = G.kills.red;
 
-      updateFrontline(dt);
-      checkVictory(dt);
+  document.getElementById('lane-top-pct').textContent = Math.round(G.lanePressure.top * 100);
+  document.getElementById('lane-bot-pct').textContent = Math.round(G.lanePressure.bot * 100);
+
+  const secs = Math.floor(G.matchTime / 1000);
+  const mm = Math.floor(secs / 60);
+  const ss = (secs % 60).toString().padStart(2, '0');
+  document.getElementById('match-time').textContent = `${mm}:${ss}`;
+
+  // Button states
+  const r = G.resources.blue;
+  const atCap = G.supplyUsed.blue >= G.supplyCap.blue;
+  ['infantry', 'tank', 'antitank', 'support'].forEach(t => {
+    const btn = document.getElementById('btn-' + t);
+    const def = UNIT_DEF[t];
+    const onCd = G.unitCooldowns[t] > 0 || G.globalDeployCd > 0;
+    btn.disabled = r < def.cost || atCap || onCd;
+    // Cooldown bar
+    const cdBar = document.getElementById('cd-' + t);
+    const cdPct = G.unitCooldowns[t] > 0 ? (G.unitCooldowns[t] / def.cooldown * 100) : 0;
+    cdBar.style.width = cdPct + '%';
+  });
+
+  const artyBtn = document.getElementById('btn-arty');
+  if (G.artilleryCooldown > 0) {
+    artyBtn.textContent = `Artillery (${Math.ceil(G.artilleryCooldown / 1000)}s)`;
+    artyBtn.disabled = true;
+    document.getElementById('cd-arty').style.width = (G.artilleryCooldown / G.artilleryMaxCD * 100) + '%';
+  } else {
+    artyBtn.textContent = 'Artillery (50)';
+    artyBtn.disabled = r < 50;
+    document.getElementById('cd-arty').style.width = '0%';
+  }
+}
+
+// ============================================================================
+//  LOG
+// ============================================================================
+function log(msg) {
+  document.getElementById('log').textContent = msg;
+}
+
+// ============================================================================
+//  MAIN GAME LOOP
+// ============================================================================
+function gameLoop(ts) {
+  if (!G.lastTime) G.lastTime = ts;
+  const dt = Math.min(ts - G.lastTime, 100);
+  G.lastTime = ts;
+  G.frameCount++;
+
+  if (!G.gameover) {
+    updateScroll(dt);
+    updateResources(dt);
+    updateSupply(dt);
+    updateCooldowns(dt);
+    updateAI(dt);
+
+    // Update units
+    for (const u of G.units) u.update(dt, G.units);
+    G.units = G.units.filter(u => !u.dead);
+
+    // Cap unit count
+    if (G.units.length > 100) {
+      G.units = G.units.slice(G.units.length - 100);
     }
 
-    render();
-    updateUI();
-    requestAnimationFrame(gameLoop);
+    // Update projectiles
+    for (const p of G.projectiles) p.life -= dt;
+    G.projectiles = G.projectiles.filter(p => p.life > 0);
+
+    // Update explosions
+    for (const e of G.explosions) e.life -= dt;
+    G.explosions = G.explosions.filter(e => e.life > 0);
+
+    // Update particles
+    for (const p of G.particles) {
+      p.x += p.vx * (dt / 1000);
+      p.y += p.vy * (dt / 1000);
+      p.vx *= 0.92;
+      p.vy *= 0.92;
+      p.life -= dt;
+    }
+    G.particles = G.particles.filter(p => p.life > 0);
+
+    // Update heal beams
+    for (const b of G.healBeams) b.life -= dt;
+    G.healBeams = G.healBeams.filter(b => b.life > 0);
+
+    updateFrontline(dt);
+    checkVictory(dt);
   }
 
+  render();
+  updateUI();
   requestAnimationFrame(gameLoop);
-  </script>
+}
+
+// Use CSS overflow scrolling for the viewport
+viewport.style.overflowX = 'hidden';
+viewport.style.overflowY = 'hidden';
+
+// Center scroll initially
+G.scrollX = (WORLD_W - VIEW_W) / 2;
+canvas.style.marginLeft = -G.scrollX + 'px';
+
+// Override render scroll to use CSS transform for performance
+const origRender = render;
+render = function() {
+  origRender();
+  canvas.style.marginLeft = -G.scrollX + 'px';
+};
+
+requestAnimationFrame(gameLoop);
+</script>
 </body>
 </html>
