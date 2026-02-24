@@ -115,7 +115,7 @@
         <button class="spawn-support" id="btn-support" data-type="support">Support (40)<div class="cd-bar" id="cd-support"></div></button>
       </div>
       <div class="btn-row" style="margin-top:6px">
-        <button class="ability" onclick="triggerArtillery()" id="btn-arty">Artillery (50)<div class="cd-bar" id="cd-arty"></div></button>
+        <button class="ability" onclick="triggerArtillery()" id="btn-arty"><span id="arty-label">Artillery (50)</span><div class="cd-bar" id="cd-arty"></div></button>
       </div>
     </div>
 
@@ -225,6 +225,7 @@ const G = {
   aiDeployCd: 0,
   aiUnitCds:  { infantry: 0, tank: 0, antitank: 0, support: 0 },
   aiThinkTimer: 0,
+  aiArtilleryTimer: 0,
 
   // Placement
   selectedType: null,
@@ -487,6 +488,12 @@ viewport.addEventListener('click', e => {
 
   // Artillery targeting
   if (G.artilleryPending) {
+    if (G.resources.blue < 50) {
+      G.artilleryPending = false;
+      viewport.style.cursor = G.selectedType ? 'crosshair' : 'default';
+      log('Not enough resources for artillery.');
+      return;
+    }
     G.resources.blue -= 50;
     G.artilleryCooldown = G.artilleryMaxCD;
     G.artilleryPending = false;
@@ -620,14 +627,26 @@ function updateScroll(dt) {
 //  AI LOGIC
 // ============================================================================
 function updateAI(dt) {
-  const r = G.resources.red;
-
   G.aiDeployCd = Math.max(0, G.aiDeployCd - dt);
   for (const t in G.aiUnitCds) G.aiUnitCds[t] = Math.max(0, G.aiUnitCds[t] - dt);
+
+  // AI artillery (independent of unit deploy logic)
+  G.aiArtilleryTimer += dt;
+  if (G.aiArtilleryTimer >= 10000 && G.resources.red >= 50) {
+    G.aiArtilleryTimer = 0;
+    const blueUnits = liveUnits('blue');
+    if (blueUnits.length > 3) {
+      const target = blueUnits[Math.floor(Math.random() * blueUnits.length)];
+      G.resources.red -= 50;
+      setTimeout(() => doArtilleryStrike(target.x, target.y, 'red'), 900);
+    }
+  }
 
   G.aiThinkTimer += dt;
   if (G.aiThinkTimer < 2000) return;  // Think every 2 seconds
   G.aiThinkTimer = 0;
+
+  const r = G.resources.red;
 
   if (G.aiDeployCd > 0) return;
   if (countSupply('red') >= G.supplyCap.red) return;
@@ -691,16 +710,6 @@ function updateAI(dt) {
     G.aiDeployCd = GLOBAL_DEPLOY_CD + 500; // AI slightly slower deploy
     G.aiUnitCds[chosenType] = UNIT_DEF[chosenType].cooldown;
   }
-
-  // AI artillery
-  if (G.frameCount % 600 === 0 && r >= 50) {
-    const blueUnits = liveUnits('blue');
-    if (blueUnits.length > 3) {
-      const target = blueUnits[Math.floor(Math.random() * blueUnits.length)];
-      G.resources.red -= 50;
-      setTimeout(() => doArtilleryStrike(target.x, target.y, 'red'), 900);
-    }
-  }
 }
 
 // ============================================================================
@@ -725,7 +734,7 @@ function updateFrontline(dt) {
       const net = (bP - rP);
       target = G.frontline[lane] + net * 14 * (dt / 1000);
     }
-    G.frontline[lane] += (target - G.frontline[lane]) * 0.04;
+    G.frontline[lane] += (target - G.frontline[lane]) * (1 - Math.pow(0.04, dt / 1000));
     G.frontline[lane] = Math.max(BASE_W, Math.min(WORLD_W - BASE_W, G.frontline[lane]));
     G.lanePressure[lane] = G.frontline[lane] / WORLD_W;
   });
@@ -1189,12 +1198,13 @@ function updateUI() {
   });
 
   const artyBtn = document.getElementById('btn-arty');
+  const artyLabel = document.getElementById('arty-label');
   if (G.artilleryCooldown > 0) {
-    artyBtn.textContent = `Artillery (${Math.ceil(G.artilleryCooldown / 1000)}s)`;
+    artyLabel.textContent = `Artillery (${Math.ceil(G.artilleryCooldown / 1000)}s)`;
     artyBtn.disabled = true;
     document.getElementById('cd-arty').style.width = (G.artilleryCooldown / G.artilleryMaxCD * 100) + '%';
   } else {
-    artyBtn.textContent = 'Artillery (50)';
+    artyLabel.textContent = 'Artillery (50)';
     artyBtn.disabled = r < 50;
     document.getElementById('cd-arty').style.width = '0%';
   }
@@ -1227,9 +1237,11 @@ function gameLoop(ts) {
     for (const u of G.units) u.update(dt, G.units);
     G.units = G.units.filter(u => !u.dead);
 
-    // Cap unit count
+    // Cap unit count — cull lowest-HP units first
     if (G.units.length > 100) {
+      G.units.sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp));
       G.units = G.units.slice(G.units.length - 100);
+      log('Battlefield overcrowded — weakest units eliminated.');
     }
 
     // Update projectiles
